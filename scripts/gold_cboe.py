@@ -23,10 +23,9 @@ def fetch():
 
 def main():
     result = fetch()
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = OUT_DIR / f"{NAME}_{ts}.json"
+    out_path = OUT_DIR / f"{NAME}_latest.json"
     out_path.write_text(json.dumps(result, ensure_ascii=False, separators=(",",":")), encoding="utf-8")
-    logging.info("Arquivo salvo em %s", out_path)
+    logging.info("Arquivo atualizado em %s", out_path)
 
 if __name__ == "__main__":
     main()
