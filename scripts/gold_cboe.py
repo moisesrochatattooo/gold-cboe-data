@@ -19,7 +19,23 @@ def fetch():
     data = resp.json()["data"]
     spot = data.get("current_price")
     opts = data.get("options", [])
-    return {"symbol": NAME, "spot": spot, "options": opts, "generated_at": datetime.now(timezone.utc).isoformat()}
+    
+    # Cálculo simples de Sentimento (GEX Proxy)
+    call_oi = sum(o.get("open_interest", 0) for o in opts if o.get("option_type") == "C")
+    put_oi = sum(o.get("open_interest", 0) for o in opts if o.get("option_type") == "P")
+    
+    sentiment = "neutral"
+    if call_oi > put_oi * 1.1: sentiment = "bullish"
+    elif put_oi > call_oi * 1.1: sentiment = "bearish"
+    
+    return {
+        "symbol": NAME, 
+        "spot": spot, 
+        "sentiment": sentiment,
+        "call_oi": call_oi,
+        "put_oi": put_oi,
+        "generated_at": datetime.now(timezone.utc).isoformat()
+    }
 
 def main():
     result = fetch()
