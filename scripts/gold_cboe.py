@@ -20,18 +20,27 @@ def fetch():
     spot = data.get("current_price")
     opts = data.get("options", [])
     
-    # Cálculo simples de Sentimento (GEX Proxy)
-    call_oi = sum(o.get("open_interest", 0) for o in opts if o.get("option_type") == "C")
-    put_oi = sum(o.get("open_interest", 0) for o in opts if o.get("option_type") == "P")
-    
+    # Cálculo de Sentimento e Níveis (Walls)
+    call_options = [o for o in opts if o.get("option_type") == "C"]
+    put_options = [o for o in opts if o.get("option_type") == "P"]
+
+    call_oi = sum(o.get("open_interest", 0) for o in call_options)
+    put_oi = sum(o.get("open_interest", 0) for o in put_options)
+
+    # Identifica as "Walls" (Strikes com maior OI)
+    call_wall = max(call_options, key=lambda x: x.get("open_interest", 0), default={}).get("strike", 0)
+    put_wall = max(put_options, key=lambda x: x.get("open_interest", 0), default={}).get("strike", 0)
+
     sentiment = "neutral"
     if call_oi > put_oi * 1.1: sentiment = "bullish"
     elif put_oi > call_oi * 1.1: sentiment = "bearish"
-    
+
     return {
         "symbol": NAME, 
         "spot": spot, 
         "sentiment": sentiment,
+        "call_wall": call_wall,
+        "put_wall": put_wall,
         "call_oi": call_oi,
         "put_oi": put_oi,
         "generated_at": datetime.now(timezone.utc).isoformat()
