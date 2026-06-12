@@ -28,8 +28,12 @@ def fetch():
     put_oi = sum(o.get("open_interest", 0) for o in put_options)
 
     # Identifica as "Walls" (Strikes com maior OI)
-    call_wall = max(call_options, key=lambda x: x.get("open_interest", 0), default={}).get("strike", 0)
-    put_wall = max(put_options, key=lambda x: x.get("open_interest", 0), default={}).get("strike", 0)
+    # Filtra apenas opções que tenham open_interest > 0 para evitar 0
+    c_with_oi = [o for o in call_options if o.get("open_interest", 0) > 0]
+    p_with_oi = [o for o in put_options if o.get("open_interest", 0) > 0]
+
+    call_wall = max(c_with_oi, key=lambda x: x.get("open_interest", 0), default={}).get("strike", spot)
+    put_wall = max(p_with_oi, key=lambda x: x.get("open_interest", 0), default={}).get("strike", spot)
 
     sentiment = "neutral"
     if call_oi > put_oi * 1.1: sentiment = "bullish"
