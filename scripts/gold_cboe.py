@@ -35,6 +35,16 @@ def fetch():
     call_wall = max(c_with_oi, key=lambda x: x.get("open_interest", 0), default={}).get("strike", spot)
     put_wall = max(p_with_oi, key=lambda x: x.get("open_interest", 0), default={}).get("strike", spot)
 
+    # Top 5 Calls e Top 5 Puts por OI para plotagem de múltiplos níveis
+    top_calls = sorted(c_with_oi, key=lambda x: x.get("open_interest", 0), reverse=True)[:5]
+    top_puts = sorted(p_with_oi, key=lambda x: x.get("open_interest", 0), reverse=True)[:5]
+    
+    top_levels = []
+    for o in top_calls:
+        top_levels.append({"s": o["strike"], "t": "C", "oi": o["open_interest"]})
+    for o in top_puts:
+        top_levels.append({"s": o["strike"], "t": "P", "oi": o["open_interest"]})
+
     sentiment = "neutral"
     if call_oi > put_oi * 1.1: sentiment = "bullish"
     elif put_oi > call_oi * 1.1: sentiment = "bearish"
@@ -45,6 +55,7 @@ def fetch():
         "sentiment": sentiment,
         "call_wall": call_wall,
         "put_wall": put_wall,
+        "top_levels": top_levels,
         "call_oi": call_oi,
         "put_oi": put_oi,
         "generated_at": datetime.now(timezone.utc).isoformat()
