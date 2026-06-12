@@ -20,16 +20,17 @@ def fetch():
     spot = data.get("current_price")
     opts = data.get("options", [])
     
+    # Data atual para identificar 0DTE (Formato YYMMDD)
+    today_str = datetime.now(timezone.utc).strftime("%y%m%d")
+    
     parsed_opts = []
     for o in opts:
         opt_str = o.get("option", "")
         if len(opt_str) < 15: continue
         
-        # GLD YYMMDD C/P Strike(8 digits)
-        # GLD is 3 chars. 3 + 6 (date) = 9. Index 9 is C/P
+        opt_date = opt_str[3:9]
         opt_type = opt_str[9] 
         try:
-            # Strike is last 8 digits, divided by 1000
             strike = float(opt_str[-8:]) / 1000.0
         except:
             continue
@@ -37,46 +38,68 @@ def fetch():
         parsed_opts.append({
             "strike": strike,
             "option_type": opt_type,
-            "open_interest": o.get("open_interest", 0)
+            "is_0dte": (opt_date == today_str),
+            "open_interest": o.get("open_interest", 0),
+            "gamma": o.get("gamma", 0)
         })
 
-    # Cálculo de Sentimento e Níveis (Walls)
-    call_options = [o for o in parsed_opts if o["option_type"] == "C"]
-    put_options = [o for o in parsed_opts if o["option_type"] == "P"]
+    # Filtrar níveis próximos ao preço (ajuda na relevância do gráfico)
+    # Pegamos níveis num range de +-15% do spot
+    near_opts = [o for o in parsed_opts if spot * 0.85 <= o["strike"] <= spot * 1.15]
+    if not near_opts: near_opts = parsed_opts
 
-    call_oi = sum(o["open_interest"] for o in call_options)
-    put_oi = sum(o["open_interest"] for o in put_options)
+    # Separar Calls e Puts
+    calls = [o for o in near_opts if o["option_type"] == "C"]
+    puts = [o for o in near_opts if o["option_type"] == "P"]
 
-    # Identifica as "Walls" (Strikes com maior OI)
-    c_with_oi = [o for o in call_options if o["open_interest"] > 0]
-    p_with_oi = [o for o in put_options if o["open_interest"] > 0]
+    # 0DTE Levels
+    calls_0dte = [o for o in calls if o["is_0dte"]]
+    puts_0dte = [o for o in puts if o["is_0dte"]]
 
-    call_wall = max(c_with_oi, key=lambda x: x["open_interest"], default={}).get("strike", spot)
-    put_wall = max(p_with_oi, key=lambda x: x["open_interest"], default={}).get("strike", spot)
+    # Encontrar as Walls (Maior OI)
+    def get_top(arr, n=3):
+        return sorted([o for o in arr if o["open_interest"] > 0], 
+                      key=lambda x: x["open_interest"], reverse=True)[:n]
 
-    # Top 5 Calls e Top 5 Puts por OI
-    top_calls = sorted(c_with_oi, key=lambda x: x["open_interest"], reverse=True)[:5]
-    top_puts = sorted(p_with_oi, key=lambda x: x["open_interest"], reverse=True)[:5]
-    
     top_levels = []
-    for o in top_calls:
-        top_levels.append({"s": o["strike"], "t": "C", "oi": o["open_interest"]})
-    for o in top_puts:
-        top_levels.append({"s": o["strike"], "t": "P", "oi": o["open_interest"]})
+    
+    # 1. Macro Walls (Toda a cadeia perto do spot)
+    for o in get_top(calls, 3):
+        top_levels.append({"s": o["strike"], "t": "CW", "oi": o["open_interest"]})
+    for o in get_top(puts, 3):
+        top_levels.append({"s": o["strike"], "t": "PW", "oi": o["open_interest"]})
 
-    sentiment = "neutral"
-    if call_oi > put_oi * 1.1: sentiment = "bullish"
-    elif put_oi > call_oi * 1.1: sentiment = "bearish"
+    # 2. 0DTE Walls (Se existirem)
+    if calls_0dte or puts_0dte:
+        for o in get_top(calls_0dte, 2):
+            top_levels.append({"s": o["strike"], "t": "CW0", "oi": o["open_interest"]})
+        for o in get_top(puts_0dte, 2):
+            top_levels.append({"s": o["strike"], "t": "PW0", "oi": o["open_interest"]})
+
+    # 3. Estimativa de Gamma Flip (onde Gamma líquida é zero)
+    # Agrupar por strike para calcular Gamma Líquida
+    gamma_map = {}
+    for o in near_opts:
+        s = o["strike"]
+        if s not in gamma_map: gamma_map[s] = 0
+        gamma_map[s] += o["gamma"] if o["option_type"] == "C" else -o["gamma"]
+    
+    # O strike onde o valor absoluto da Gamma Líquida é menor é o "Flip"
+    gamma_flip = 0
+    if gamma_map:
+        gamma_flip = min(gamma_map.keys(), key=lambda s: abs(gamma_map[s]))
+        top_levels.append({"s": gamma_flip, "t": "GF", "oi": 0})
+
+    call_oi = sum(o["open_interest"] for o in calls)
+    put_oi = sum(o["open_interest"] for o in puts)
+    sentiment = "bullish" if call_oi > put_oi else "bearish"
 
     return {
         "symbol": NAME, 
         "spot": spot, 
         "sentiment": sentiment,
-        "call_wall": call_wall,
-        "put_wall": put_wall,
+        "gamma_flip": gamma_flip,
         "top_levels": top_levels,
-        "call_oi": call_oi,
-        "put_oi": put_oi,
         "generated_at": datetime.now(timezone.utc).isoformat()
     }
 
