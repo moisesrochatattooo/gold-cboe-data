@@ -20,24 +20,43 @@ def fetch():
     spot = data.get("current_price")
     opts = data.get("options", [])
     
-    # Cálculo de Sentimento e Níveis (Walls)
-    call_options = [o for o in opts if o.get("option_type") == "C"]
-    put_options = [o for o in opts if o.get("option_type") == "P"]
+    parsed_opts = []
+    for o in opts:
+        opt_str = o.get("option", "")
+        if len(opt_str) < 15: continue
+        
+        # GLD YYMMDD C/P Strike(8 digits)
+        # GLD is 3 chars. 3 + 6 (date) = 9. Index 9 is C/P
+        opt_type = opt_str[9] 
+        try:
+            # Strike is last 8 digits, divided by 1000
+            strike = float(opt_str[-8:]) / 1000.0
+        except:
+            continue
+            
+        parsed_opts.append({
+            "strike": strike,
+            "option_type": opt_type,
+            "open_interest": o.get("open_interest", 0)
+        })
 
-    call_oi = sum(o.get("open_interest", 0) for o in call_options)
-    put_oi = sum(o.get("open_interest", 0) for o in put_options)
+    # Cálculo de Sentimento e Níveis (Walls)
+    call_options = [o for o in parsed_opts if o["option_type"] == "C"]
+    put_options = [o for o in parsed_opts if o["option_type"] == "P"]
+
+    call_oi = sum(o["open_interest"] for o in call_options)
+    put_oi = sum(o["open_interest"] for o in put_options)
 
     # Identifica as "Walls" (Strikes com maior OI)
-    # Filtra apenas opções que tenham open_interest > 0 para evitar 0
-    c_with_oi = [o for o in call_options if o.get("open_interest", 0) > 0]
-    p_with_oi = [o for o in put_options if o.get("open_interest", 0) > 0]
+    c_with_oi = [o for o in call_options if o["open_interest"] > 0]
+    p_with_oi = [o for o in put_options if o["open_interest"] > 0]
 
-    call_wall = max(c_with_oi, key=lambda x: x.get("open_interest", 0), default={}).get("strike", spot)
-    put_wall = max(p_with_oi, key=lambda x: x.get("open_interest", 0), default={}).get("strike", spot)
+    call_wall = max(c_with_oi, key=lambda x: x["open_interest"], default={}).get("strike", spot)
+    put_wall = max(p_with_oi, key=lambda x: x["open_interest"], default={}).get("strike", spot)
 
-    # Top 5 Calls e Top 5 Puts por OI para plotagem de múltiplos níveis
-    top_calls = sorted(c_with_oi, key=lambda x: x.get("open_interest", 0), reverse=True)[:5]
-    top_puts = sorted(p_with_oi, key=lambda x: x.get("open_interest", 0), reverse=True)[:5]
+    # Top 5 Calls e Top 5 Puts por OI
+    top_calls = sorted(c_with_oi, key=lambda x: x["open_interest"], reverse=True)[:5]
+    top_puts = sorted(p_with_oi, key=lambda x: x["open_interest"], reverse=True)[:5]
     
     top_levels = []
     for o in top_calls:
